@@ -33,49 +33,97 @@ class Client:
         self.model = None
         self.tokenizer = None
 
-    def load_model(self,param_template:Dict[str,torch.Tensor]):
-        print(f"[Client {self.cid}] 初始化模型...")
+    def load_model(self, param_template):
+        if self.model is not None:
+            # 已初始化过：只加载聚合来的 LoRA
+            if param_template and any("lora_" in k for k in param_template):
+                cur_sd = self.model.state_dict()
+                filtered = {
+                    k: v.to(self.device, dtype=cur_sd[k].dtype)
+                    for k, v in param_template.items()
+                    if k in cur_sd and v.shape == cur_sd[k].shape
+                }
+                try:
+                    set_peft_model_state_dict(self.model, filtered, adapter_name="default")
+                except TypeError:
+                    set_peft_model_state_dict(self.model, filtered)
+                print(f"[Client {self.cid}] 加载聚合LoRA：匹配{len(filtered)}")
+            return  # ✅ 不再重建模型
+
+        # —— 下面是首次初始化（保持你原逻辑） —— 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
         base_model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-            local_files_only=True
+            self.model_path, torch_dtype=torch.bfloat16, trust_remote_code=True, local_files_only=True
         )
+        if hasattr(base_model.config, "use_cache"): base_model.config.use_cache = False
+        if getattr(base_model.config, "sliding_window", None) is not None: base_model.config.sliding_window = None
 
-        # 用 LoRA 包装模型（注意要配置正确的 target modules）
         lora_config = LoraConfig(
-            r=8,
-            lora_alpha=32,
-            target_modules=["q_proj", "v_proj"],
-            lora_dropout=0.05,
-            bias="none",
+            r=8, lora_alpha=32, lora_dropout=0.05, bias="none",
+            target_modules=["q_proj", "v_proj"],  # 你当前就是 q/v，两端一致即可
             task_type="CAUSAL_LM"
         )
-        model = get_peft_model(base_model, lora_config)
-        model = model.to(self.device)
+        model = get_peft_model(base_model, lora_config).to(self.device)
         model.train()
         self.model = model
 
-        if param_template and any("lora_" in k for k in param_template.keys()):
-            # 将聚合来的 LoRA 写入本地 LoRA
-            lora_loaded_missing, lora_unexpected = set_peft_model_state_dict(
-                self.model,
-                {k: v.to(self.device, dtype=self.model.dtype) for k, v in param_template.items()},
-                adapter_name="default"
-            )
-            matched = len(param_template) - len(lora_loaded_missing)
-            print(f"[Client {self.cid}] 加载聚合LoRA：匹配{matched} 缺失{len(lora_loaded_missing)} 意外{len(lora_unexpected)}")
-        else:
-            # 兼容旧路径（如果还是发来 q_proj/v_proj 的全量矩阵，就按旧逻辑覆盖）
-            loaded, missing = 0, []
-            for name, param in model.named_parameters():
-                if name in param_template:
-                    param.data = param_template[name].to(self.device).to(param.dtype)
-                    loaded += 1
-                elif "lora_" in name:
-                    missing.append(name)
-            print(f"[Client {self.cid}] 覆盖参数数：{loaded}；未匹配的 LoRA 参数样例：{missing[:5]}")
+        # 首次也加载一下聚合来的 LoRA（若非空）
+        if param_template and any("lora_" in k for k in param_template):
+            cur_sd = self.model.state_dict()
+            filtered = {
+                k: v.to(self.device, dtype=cur_sd[k].dtype)
+                for k, v in param_template.items()
+                if k in cur_sd and v.shape == cur_sd[k].shape
+            }
+            try:
+                set_peft_model_state_dict(self.model, filtered, adapter_name="default")
+            except TypeError:
+                set_peft_model_state_dict(self.model, filtered)
+            print(f"[Client {self.cid}] 首次加载聚合LoRA：匹配{len(filtered)}")
+
+    # def load_model(self,param_template:Dict[str,torch.Tensor]):
+    #     print(f"[Client {self.cid}] 初始化模型...")
+    #     self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
+    #     base_model = AutoModelForCausalLM.from_pretrained(
+    #         self.model_path,
+    #         torch_dtype=torch.bfloat16,
+    #         trust_remote_code=True,
+    #         local_files_only=True
+    #     )
+
+    #     # 用 LoRA 包装模型（注意要配置正确的 target modules）
+    #     lora_config = LoraConfig(
+    #         r=8,
+    #         lora_alpha=32,
+    #         target_modules=["q_proj", "v_proj"],
+    #         lora_dropout=0.05,
+    #         bias="none",
+    #         task_type="CAUSAL_LM"
+    #     )
+    #     model = get_peft_model(base_model, lora_config)
+    #     model = model.to(self.device)
+    #     model.train()
+    #     self.model = model
+
+    #     if param_template and any("lora_" in k for k in param_template.keys()):
+    #         # 将聚合来的 LoRA 写入本地 LoRA
+    #         lora_loaded_missing, lora_unexpected = set_peft_model_state_dict(
+    #             self.model,
+    #             {k: v.to(self.device, dtype=self.model.dtype) for k, v in param_template.items()},
+    #             adapter_name="default"
+    #         )
+    #         matched = len(param_template) - len(lora_loaded_missing)
+    #         print(f"[Client {self.cid}] 加载聚合LoRA：匹配{matched} 缺失{len(lora_loaded_missing)} 意外{len(lora_unexpected)}")
+    #     else:
+    #         # 兼容旧路径（如果还是发来 q_proj/v_proj 的全量矩阵，就按旧逻辑覆盖）
+    #         loaded, missing = 0, []
+    #         for name, param in model.named_parameters():
+    #             if name in param_template:
+    #                 param.data = param_template[name].to(self.device).to(param.dtype)
+    #                 loaded += 1
+    #             elif "lora_" in name:
+    #                 missing.append(name)
+    #         print(f"[Client {self.cid}] 覆盖参数数：{loaded}；未匹配的 LoRA 参数样例：{missing[:5]}")
 
 
         # 打印一下结构
