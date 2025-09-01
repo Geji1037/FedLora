@@ -1,0 +1,42 @@
+import ray
+import numpy as np
+from aggregator import Aggregator
+from client import Client
+from train_utils import train_one_step
+
+def main():
+    ray.init(      
+        address='auto',      
+        runtime_env={
+                "working_dir":".",
+                "env_vars":{"PYTHONPATH":"."} 
+            }
+            )
+
+    aggregator = Aggregator.remote()
+    Clients = []
+    model_path = "/root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    for i in range(1,3):
+        resource_key = f"client_node_{i}"
+        resource_value = 1
+        resources = {resource_key:resource_value}
+        client = Client.options(
+            resources=resources
+        ).remote(i,model_path=model_path)
+        Clients.append(client)    
+    ray.get([client.ping.remote() for client in Clients])
+
+    for round in range(3):
+        print(f"\n=== Round {round} ===")
+
+        params = ray.get(aggregator.distribute_parameters.remote())
+        print(f"分发参数数量: {len(params)}, 样例参数形状: {next(iter(params.values())).shape}")
+
+        futures = [client.process_parameters.remote(params) for client in Clients]
+        client_results = ray.get(futures)
+
+        global_update = ray.get(aggregator.aggregate.remote(client_results))
+        print(f"聚合参数均值: {np.mean([u.mean().item() for u in global_update.values()]):.4e}")
+
+if __name__ == "__main__":
+    main()
