@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch.storage")
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch.load")
 
-model_path = "/root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+model_path = "/home/fedllm/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B"
 
 @ray.remote(num_gpus=1, resources={"aggregator_node": 1})
 class Aggregator:

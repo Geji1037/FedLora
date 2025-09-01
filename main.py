@@ -4,24 +4,37 @@ from aggregator import Aggregator
 from client import Client
 from train_utils import train_one_step
 
+import os
+
+COMMON_ENV = {
+    "MACA_PATH": "/opt/maca",
+    "LD_LIBRARY_PATH": "/opt/maca/lib:/opt/maca/lib64:/usr/local/lib:" + os.environ.get("LD_LIBRARY_PATH", ""),
+    "PATH": "/opt/maca/bin:" + os.environ.get("PATH", "")
+}
+
 def main():
     ray.init(      
         address='auto',      
         runtime_env={
                 "working_dir":".",
-                "env_vars":{"PYTHONPATH":"."} 
+                "env_vars":{"PYTHONPATH":"."} ,
+                "excludes":[
+                    "models","models/**"
+                ]
             }
             )
 
     aggregator = Aggregator.remote()
     Clients = []
-    model_path = "/root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    model_path = "/home/fedllm/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B"
     for i in range(1,3):
         resource_key = f"client_node_{i}"
         resource_value = 1
         resources = {resource_key:resource_value}
         client = Client.options(
-            resources=resources
+            num_gpus=1,
+            resources=resources,
+            runtime_env={"env_vars":COMMON_ENV}
         ).remote(i,model_path=model_path)
         Clients.append(client)    
     ray.get([client.ping.remote() for client in Clients])
