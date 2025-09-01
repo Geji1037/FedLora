@@ -7,7 +7,7 @@ from typing import Dict
 import os
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training
+from peft import get_peft_model, LoraConfig, prepare_model_for_kbit_training,set_peft_model_state_dict
 from train_utils import train_one_step
 
 from torch.utils.data import DataLoader
@@ -57,19 +57,40 @@ class Client:
         model.train()
         self.model = model
 
+        if param_template and any("lora_" in k for k in param_template.keys()):
+            # 将聚合来的 LoRA 写入本地 LoRA
+            lora_loaded_missing, lora_unexpected = set_peft_model_state_dict(
+                self.model,
+                {k: v.to(self.device, dtype=self.model.dtype) for k, v in param_template.items()},
+                adapter_name="default"
+            )
+            matched = len(param_template) - len(lora_loaded_missing)
+            print(f"[Client {self.cid}] 加载聚合LoRA：匹配{matched} 缺失{len(lora_loaded_missing)} 意外{len(lora_unexpected)}")
+        else:
+            # 兼容旧路径（如果还是发来 q_proj/v_proj 的全量矩阵，就按旧逻辑覆盖）
+            loaded, missing = 0, []
+            for name, param in model.named_parameters():
+                if name in param_template:
+                    param.data = param_template[name].to(self.device).to(param.dtype)
+                    loaded += 1
+                elif "lora_" in name:
+                    missing.append(name)
+            print(f"[Client {self.cid}] 覆盖参数数：{loaded}；未匹配的 LoRA 参数样例：{missing[:5]}")
+
+
         # 打印一下结构
         # print(model)
 
-        missing ,loaded = [],0
+        # missing ,loaded = [],0
 
-        # 将来自 Aggregator 的权重加载到 model 中
-        for name, param in model.named_parameters():
-            if name in param_template:
-                param.data = param_template[name].to(self.device).to(param.dtype)
-                loaded += 1
-            elif "lora_" in name:
-                missing.append(name)
-        print(f"[Client {self.cid}] 覆盖参数数：{loaded}；未匹配的 LoRA 参数样例：{missing[:5]}")
+        # # 将来自 Aggregator 的权重加载到 model 中
+        # for name, param in model.named_parameters():
+        #     if name in param_template:
+        #         param.data = param_template[name].to(self.device).to(param.dtype)
+        #         loaded += 1
+        #     elif "lora_" in name:
+        #         missing.append(name)
+        # print(f"[Client {self.cid}] 覆盖参数数：{loaded}；未匹配的 LoRA 参数样例：{missing[:5]}")
 
     def ping(self):
         return {"cid": self.cid, "host": self.hostname, "device": str(self.device)}
@@ -84,8 +105,15 @@ class Client:
 
         # 返回更新后的 LoRA 权重
         updated_params = {
-            n: p.detach().cpu().half() for n, p in self.model.named_parameters()
-            if "lora_" in n  # 只发送 LoRA 权重
+            n: p.detach().cpu().half()
+            for n, p in self.model.state_dict().items()
+            if "lora_" in n and n.endswith("weight")
         }
 
-        return updated_params
+        return {"lora_state": updated_params, "num_samples": 1024}
+        # updated_params = {
+        #     n: p.detach().cpu().half() for n, p in self.model.named_parameters()
+        #     if "lora_" in n  # 只发送 LoRA 权重
+        # }
+
+        # return updated_params

@@ -43,7 +43,12 @@ def main():
         print(f"\n=== Round {round} ===")
 
         params = ray.get(aggregator.distribute_parameters.remote())
-        print(f"分发参数数量: {len(params)}, 样例参数形状: {next(iter(params.values())).shape}")
+        if not params:
+            print("分发参数数量: 0（冷启动：首轮下发为空的 LoRA 字典）")
+        else:
+            any_tensor = next(iter(params.values()))
+            print(f"分发参数数量: {len(params)}, 样例参数形状: {getattr(any_tensor, 'shape', 'N/A')}")
+        # print(f"分发参数数量: {len(params)}, 样例参数形状: {next(iter(params.values())).shape}")
 
         futures = [client.process_parameters.remote(params) for client in Clients]
         client_results = ray.get(futures)
