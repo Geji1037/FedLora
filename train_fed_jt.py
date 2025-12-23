@@ -224,7 +224,14 @@ def build_components(
     组装：tokenizer、LoRA模型（可从 adapter_path 继续）、以及处理好的 train_dataset
     仅用于联邦客户端导入。
     """
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, trust_remote_code=True)
+
+    print(f"[build_components] raw model_name={model_name!r}")
+
+    if model_name == "model":
+    # 你这台机器模型真实路径在这里
+        model_name = "/home/exp1/Qwen3/Qwen3-1.7B"
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, trust_remote_code=True,local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -274,7 +281,7 @@ def make_trainer_for_steps(
     save_total_limit=2,
     client_id: str = "client0",
     round_id: int = 0,
-    base_ckpt_dir: str = "/home/fedllm/fed_ckpts",
+    base_ckpt_dir: str = "/exp1/fed_ckpts",
     optimizers: Optional[Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]] = None,
 ) -> Trainer:
     """

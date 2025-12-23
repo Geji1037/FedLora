@@ -30,11 +30,11 @@ def main():
     # -----------------------
     # 全局配置（按需改）
     # -----------------------
-    model_name = "/home/fedllm/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B"
+    model_name = "/exp1/Qwen3/Qwen3-1.7B"
     # 按客户端划分数据集（示例）
     dataset_map = {
-        1: "/home/fedllm/MedQA_EN.jsonl",
-        2: "/home/fedllm/MedQA_CN.jsonl",
+        1: "/exp1/MedQA_EN.jsonl",
+        2: "/exp1/MedQA_CN.jsonl",
         # 3: "/home/fedllm/data/MedQA_CN.jsonl",
     }
     steps_per_round = 50
@@ -49,7 +49,7 @@ def main():
     aggregator = Aggregator.remote()
 
     Clients = []
-    # 你原来是 range(1,3)，即客户端 1 和 2
+
     for i in range(1, 3):
         resource_key = f"client_node_{i}"
         resources = {resource_key: 1}
@@ -77,6 +77,7 @@ def main():
             report_to=("swanlab",),           # 上报到 SwanLab 则改成 ("swanlab",)
         )
         Clients.append(client)
+
 
     # 心跳
     _ = ray.get([c.ping.remote() for c in Clients])
