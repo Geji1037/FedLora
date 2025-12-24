@@ -5,6 +5,7 @@ from transformers import AutoModelForCausalLM
 from typing import Dict, List
 import warnings
 from collections import defaultdict
+import time 
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch.storage")
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch.load")
@@ -40,6 +41,7 @@ class Aggregator:
             ...
           ]
         """
+        t_agg_start = time.perf_counter() 
         if not client_updates:
             print("[Aggregator] 未收到更新，继续分发上轮参数")
             return self.distribute_parameters()
@@ -76,7 +78,17 @@ class Aggregator:
             print(f"[Aggregator] 轮次 {self.round} 聚合完成，但为空（可能客户端未回 lora_state）")
 
         # 返回可直接下发的全局 LoRA
-        return self.distribute_parameters()
+
+        merged = self.distribute_parameters()
+        t_agg_end = time.perf_counter()
+        return {
+            "merged_lora": merged,
+            "agg_time_s": t_agg_end - t_agg_start,
+            "clients": total_clients,
+            "keys": len(new_global),
+        }
+
+        # return self.distribute_parameters()
 
     # def aggregate(self, client_updates: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     #     avg_updates = {}

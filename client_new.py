@@ -4,6 +4,8 @@ import ray
 import torch
 import socket
 from typing import Dict, Optional, Tuple
+import time ## 用于计时
+
 
 from peft import set_peft_model_state_dict
 from train_fed_jt import build_components, make_trainer_for_steps
@@ -61,6 +63,9 @@ class Client:
             except Exception as e:
                 print(f"[Client {self.cid}] GPU_NAME_ERR={e}")
 
+
+    def ack_params(self,params,round_id: int =0) :
+        return {"client_id":self.cid,"round_id":round_id,"ack":True}
     # -- 懒加载：首次构建 tokenizer/model/dataset --
     def _ensure_ready(self):
         if self.model is not None:
@@ -78,6 +83,8 @@ class Client:
 
     # -- 每轮：接收聚合 LoRA -> 训练若干步 -> 回传 LoRA --
     def process_parameters(self, merged_lora: Optional[Dict[str, torch.Tensor]] = None,round_id: int = 0):
+
+        t_start = time.perf_counter()
         self._ensure_ready()
 
         # 载入聚合来的 LoRA（只匹配存在且形状相同的键）
@@ -120,7 +127,10 @@ class Client:
         )
 
         # 开始训练到 target_total_steps
+        t_train_start = time.perf_counter()
         trainer.train()
+        t_train_end = time.perf_counter()
+        
 
         # 持久化优化器/调度器与 global_step
         self.optimizer, self.lr_scheduler = trainer.optimizer, trainer.lr_scheduler
@@ -133,6 +143,8 @@ class Client:
             if "lora_" in n
         }
 
+        t_end = time.perf_counter()
+
         # 可选：返回简单统计
         report = {
             "client_id": self.cid,
@@ -140,6 +152,13 @@ class Client:
             "round_steps": int(self.steps_per_round),
             "global_step": self.global_step,
             "num_samples": int(len(self.train_dataset)),
+            # 计时信息
+            "train_time_sec":t_train_end - t_train_start,# t^{comp}_{k} 客户端本地训练时间
+            "process_time_sec":t_end - t_start, # t^{comp}_{b} 客户端总处理时间
         }
         print(f"[Client {self.cid}] 训练完成：{report}")
-        return {"lora_state": lora_state, "report": report}
+        return {
+            "lora_state": lora_state,
+            "report": report,
+        }
+        #return {"lora_state": lora_state, "report": report}
