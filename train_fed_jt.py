@@ -274,7 +274,7 @@ def make_trainer_for_steps(
     save_total_limit=2,
     client_id: str = "client0",
     round_id: int = 0,
-    base_ckpt_dir: str = "/home/fedllm/fed_ckpts",
+    base_ckpt_dir: str = "/exp1/FedLora/fed_ckpts",
     optimizers: Optional[Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]] = None,
 ) -> Trainer:
     """

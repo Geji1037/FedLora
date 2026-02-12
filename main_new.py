@@ -9,9 +9,9 @@ from client_new import Client as FedClient
 
 # 你原本的可执行环境变量
 COMMON_ENV = {
-    "MACA_PATH": "/opt/maca",
-    "LD_LIBRARY_PATH": "/opt/maca/lib:/opt/maca/lib64:/usr/local/lib:" + os.environ.get("LD_LIBRARY_PATH", ""),
-    "PATH": "/opt/maca/bin:" + os.environ.get("PATH", ""),
+    # "MACA_PATH": "/opt/maca",
+    # "LD_LIBRARY_PATH": "/opt/maca/lib:/opt/maca/lib64:/usr/local/lib:" + os.environ.get("LD_LIBRARY_PATH", ""),
+    # "PATH": "/opt/maca/bin:" + os.environ.get("PATH", ""),
     # 需要上报到 SwanLab 则可在这里设置（可选）
     "SWANLAB_PROJECT": "deepseek-1_5B-lora_sft",
     "SWANLAB_API_KEY": "pUDnewWbjDrd1iRWqP4jS"
@@ -30,11 +30,12 @@ def main():
     # -----------------------
     # 全局配置（按需改）
     # -----------------------
-    model_name = "/home/fedllm/deepseek-ai/DeepSeek-R1-Distill-Qwen-1___5B"
+    model_name = "/exp1/Qwen3/Qwen3-1.7B/"
     # 按客户端划分数据集（示例）
     dataset_map = {
-        1: "/home/fedllm/MedQA_EN.jsonl",
-        2: "/home/fedllm/MedQA_CN.jsonl",
+        1: "/exp1/FedLora/data/MedQA_EN.jsonl",
+        2: "/exp1/FedLora/data/MedQA_CN.jsonl",
+        3: "/exp1/Fedlora/data/MedQA_CN.jsonl"
         # 3: "/home/fedllm/data/MedQA_CN.jsonl",
     }
     steps_per_round = 50
@@ -46,11 +47,15 @@ def main():
     # -----------------------
     # 初始化聚合器与客户端
     # -----------------------
-    aggregator = Aggregator.remote()
+    aggregator = Aggregator.options(
+        num_cpus=1,
+        num_gpus=0,
+        resources={"aggregator_node": 1},
+    ).remote()
 
     Clients = []
     # 你原来是 range(1,3)，即客户端 1 和 2
-    for i in range(1, 3):
+    for i in range(1, 4):
         resource_key = f"client_node_{i}"
         resources = {resource_key: 1}
 
